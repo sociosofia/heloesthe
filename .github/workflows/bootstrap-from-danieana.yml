@@ -1,0 +1,102 @@
+name: Build HeloeSthe from DaniAna
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/bootstrap_heloesthe.py"
+      - "branding/**"
+      - ".github/workflows/bootstrap-from-danieana.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: heloesthe-bootstrap
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout HeloeSthe
+        uses: actions/checkout@v6
+        with:
+          ref: main
+
+      - name: Download current DaniAna PWA
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf upstream _site
+          mkdir -p upstream _site
+          curl -fL --retry 3 --retry-delay 2 --connect-timeout 20 \
+            "https://raw.githubusercontent.com/sociosofia/danieana/main/Simulados_Ana_Dani_Humanas_FINAL_PWA.zip" \
+            -o upstream/danieana.zip
+          unzip -q upstream/danieana.zip -d upstream/unpacked
+          if [ -f upstream/unpacked/index.html ]; then
+            cp -a upstream/unpacked/. _site/
+          else
+            ROOT="$(find upstream/unpacked -mindepth 1 -maxdepth 1 -type d | head -n 1)"
+            test -n "$ROOT" && test -f "$ROOT/index.html"
+            cp -a "$ROOT"/. _site/
+          fi
+          test -f _site/index.html
+
+      - name: Apply HeloeSthe identity, icon and isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/bootstrap_heloesthe.py _site
+          mkdir -p _site/icons
+          base64 -d branding/icon-192.png.b64 > _site/icons/icon-192.png
+          base64 -d branding/icon-512.png.b64 > _site/icons/icon-512.png
+          test -s _site/icons/icon-192.png
+          test -s _site/icons/icon-512.png
+          file _site/icons/icon-192.png | grep -qi 'PNG image data, 192 x 192'
+          file _site/icons/icon-512.png | grep -qi 'PNG image data, 512 x 512'
+          grep -q 'HeloeSthe' _site/index.html
+          grep -q 'Feito com afeto, para vocês. Estou na torcida!' _site/index.html
+          grep -q 'heloesthe-local-storage-namespace' _site/index.html
+          grep -q 'const DANIEANA_DOCX_REPORT_SHARE_V1=true;' _site/index.html
+          grep -q 'Compartilhar relatório DOCX' _site/index.html
+          grep -q 'navigator.share' _site/index.html
+          if grep -q 'Simulados da Ana e Dani' _site/index.html; then
+            echo 'Original Dani&Ana title remained after bootstrap.' >&2
+            exit 1
+          fi
+
+      - name: Validate application JavaScript
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          html=Path('_site/index.html').read_text(encoding='utf-8')
+          scripts=re.findall(r'<script(?:\s[^>]*)?>(.*?)</script>',html,re.S|re.I)
+          main=max(scripts,key=len)
+          Path('/tmp/heloesthe-main.js').write_text(main,encoding='utf-8')
+          PY
+          node --check /tmp/heloesthe-main.js
+
+      - name: Package HeloeSthe PWA
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f HeloeSthe_Humanas_PWA.zip
+          (cd _site && zip -qr ../HeloeSthe_Humanas_PWA.zip .)
+          test -s HeloeSthe_Humanas_PWA.zip
+
+      - name: Commit generated HeloeSthe package
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- HeloeSthe_Humanas_PWA.zip
+          git diff --cached --quiet && exit 0
+          git commit -m "Build HeloeSthe from current DaniAna"
+          git push origin HEAD:main
