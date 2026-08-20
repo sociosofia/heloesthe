@@ -4,8 +4,10 @@ on:
   push:
     branches: [main]
     paths:
-      - "HeloeSthe_Humanas_PWA.zip"
+      - "scripts/bootstrap_heloesthe.py"
+      - "branding/**"
       - ".github/workflows/deploy-heloesthe.yml"
+      - "HeloeSthe_Humanas_PWA.zip"
   workflow_dispatch:
 
 permissions:
@@ -23,30 +25,63 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - name: Checkout
+      - name: Checkout HeloeSthe
         uses: actions/checkout@v6
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
 
-      - name: Build site from HeloeSthe package
+      - name: Build HeloeSthe directly from current DaniAna
         shell: bash
         run: |
           set -euo pipefail
-          test -f HeloeSthe_Humanas_PWA.zip
-          rm -rf _site unpacked
-          mkdir -p _site unpacked
-          unzip -q HeloeSthe_Humanas_PWA.zip -d unpacked
-          if [ -f unpacked/index.html ]; then
-            cp -a unpacked/. _site/
+          rm -rf upstream _site
+          mkdir -p upstream _site
+          curl -fL --retry 3 --retry-delay 2 --connect-timeout 20 \
+            "https://raw.githubusercontent.com/sociosofia/danieana/main/Simulados_Ana_Dani_Humanas_FINAL_PWA.zip" \
+            -o upstream/danieana.zip
+          unzip -q upstream/danieana.zip -d upstream/unpacked
+          if [ -f upstream/unpacked/index.html ]; then
+            cp -a upstream/unpacked/. _site/
           else
-            ROOT="$(find unpacked -mindepth 1 -maxdepth 1 -type d | head -n 1)"
+            ROOT="$(find upstream/unpacked -mindepth 1 -maxdepth 1 -type d | head -n 1)"
             test -n "$ROOT" && test -f "$ROOT/index.html"
             cp -a "$ROOT"/. _site/
           fi
+
+          python3 scripts/bootstrap_heloesthe.py _site
+          mkdir -p _site/icons
+          base64 -d branding/icon-192.png.b64 > _site/icons/icon-192.png
+          base64 -d branding/icon-512.png.b64 > _site/icons/icon-512.png
+
           test -f _site/index.html
+          test -s _site/icons/icon-192.png
+          test -s _site/icons/icon-512.png
+          file _site/icons/icon-192.png | grep -qi 'PNG image data, 192 x 192'
+          file _site/icons/icon-512.png | grep -qi 'PNG image data, 512 x 512'
           grep -q 'HeloeSthe' _site/index.html
+          grep -q 'Feito com afeto, para vocês. Estou na torcida!' _site/index.html
+          grep -q 'heloesthe-local-storage-namespace' _site/index.html
+          grep -q 'const DANIEANA_DOCX_REPORT_SHARE_V1=true;' _site/index.html
+          grep -q 'Compartilhar relatório DOCX' _site/index.html
+          grep -q 'navigator.share' _site/index.html
+          if grep -q 'Simulados da Ana e Dani' _site/index.html; then
+            echo 'Original Dani&Ana branding remained after HeloeSthe bootstrap.' >&2
+            exit 1
+          fi
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          html=Path('_site/index.html').read_text(encoding='utf-8')
+          scripts=re.findall(r'<script(?:\s[^>]*)?>(.*?)</script>',html,re.S|re.I)
+          if not scripts:
+              raise SystemExit('No inline application script found')
+          Path('/tmp/heloesthe-main.js').write_text(max(scripts,key=len),encoding='utf-8')
+          PY
+          node --check /tmp/heloesthe-main.js
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v4
