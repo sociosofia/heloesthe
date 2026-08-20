@@ -1,0 +1,58 @@
+name: Deploy HeloeSthe
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "HeloeSthe_Humanas_PWA.zip"
+      - ".github/workflows/deploy-heloesthe.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: heloesthe-pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Build site from HeloeSthe package
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f HeloeSthe_Humanas_PWA.zip
+          rm -rf _site unpacked
+          mkdir -p _site unpacked
+          unzip -q HeloeSthe_Humanas_PWA.zip -d unpacked
+          if [ -f unpacked/index.html ]; then
+            cp -a unpacked/. _site/
+          else
+            ROOT="$(find unpacked -mindepth 1 -maxdepth 1 -type d | head -n 1)"
+            test -n "$ROOT" && test -f "$ROOT/index.html"
+            cp -a "$ROOT"/. _site/
+          fi
+          test -f _site/index.html
+          grep -q 'HeloeSthe' _site/index.html
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: _site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
