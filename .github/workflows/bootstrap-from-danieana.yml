@@ -1,3 +1,4 @@
+# Rebuilds the independent HeloeSthe package from the current DaniAna PWA.
 name: Build HeloeSthe from DaniAna
 
 on:
