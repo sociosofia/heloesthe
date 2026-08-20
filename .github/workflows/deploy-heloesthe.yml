@@ -30,8 +30,10 @@ jobs:
       - name: Checkout HeloeSthe
         uses: actions/checkout@v6
 
-      - name: Configure Pages
+      - name: Configure and enable Pages
         uses: actions/configure-pages@v5
+        with:
+          enablement: true
 
       - name: Build HeloeSthe directly from current DaniAna
         shell: bash
